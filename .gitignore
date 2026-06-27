@@ -39,3 +39,6 @@ yarn-error.*
 .vercel
 
 .env
+
+# local mock API state
+server/mock-db.json
