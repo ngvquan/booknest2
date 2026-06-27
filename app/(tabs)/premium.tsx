@@ -9,7 +9,6 @@ const VIP_FEATURES = [
   "Mở khóa toàn bộ sách VIP",
   "Tải offline không giới hạn",
   "Đọc không quảng cáo",
-  "Đồng bộ tiến độ đọc trên nhiều thiết bị",
 ];
 
 const PREMIUM_PLANS = [

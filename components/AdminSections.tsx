@@ -188,7 +188,6 @@ export function AdminSections(props: AdminSectionsProps) {
                 <View className="flex-row flex-wrap gap-2.5">
                   <Metric title="Thể loại" value={categories.length.toString()} color="#0f62fe" />
                   <Metric title="Sách" value={books.length.toString()} color="#f5a623" />
-                  <Metric title="Chương" value={chapters.length.toString()} color="#8b5cf6" />
                 </View>
 
                 {catalogTab === "categories" && (
