@@ -12,6 +12,7 @@ import { fetchBookById, fetchChaptersByBook } from "@/lib/booksService";
 import { upsertReadingProgress } from "@/lib/bookRepository";
 import { getOfflineBookDetail } from "@/lib/offlineService";
 import { callGeminiTTS, hasTtsApiKey, splitChunks, VOICES } from "@/lib/tts";
+import { clearTtsProgress, fetchTtsProgress, upsertTtsProgress } from "@/lib/ttsProgressStore";
 import { Feather } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { router, useLocalSearchParams } from "expo-router";
@@ -19,6 +20,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Platform,
   Pressable,
   ScrollView,
@@ -53,8 +55,17 @@ export default function ReaderScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
   const chunksRef = useRef<string[]>([]);
   const chunkIdxRef = useRef(0);
+  const loadedChunkIdxRef = useRef(0);
+  const resumePositionMillisRef = useRef(0);
+  const lastProgressSaveAtRef = useRef(0);
+  const playbackResolveRef = useRef<(() => void) | null>(null);
   const stopFlagRef = useRef(false);
   const voiceRef = useRef(voice);
+  const playbackContextRef = useRef<{
+    userId?: string;
+    bookId?: string;
+    chapterId?: string;
+  }>({});
   const scrollRef = useRef<ScrollView>(null);
   const lastTapRef = useRef(0);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -125,6 +136,14 @@ export default function ReaderScreen() {
   const canCloseAd = adCountdown <= 0;
 
   useEffect(() => {
+    playbackContextRef.current = {
+      userId: user?.id,
+      bookId: id,
+      chapterId: currentChapter?.id,
+    };
+  }, [currentChapter?.id, id, user?.id]);
+
+  useEffect(() => {
     if (!currentChapter?.id || user?.isVip) {
       setAdVisible(false);
       return;
@@ -153,12 +172,6 @@ export default function ReaderScreen() {
     });
   }, [currentChapter?.id, id, user?.id]);
 
-  function goToIndex(next: number) {
-    if (next < 0 || next >= chapters.length) return;
-    setCurrentIndex(next);
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
-  }
-
   function handleTap() {
     const now = Date.now();
     if (now - lastTapRef.current < 260) {
@@ -169,15 +182,9 @@ export default function ReaderScreen() {
     lastTapRef.current = now;
   }
 
-  function handleBackToBookDetail() {
-    if (id) {
-      router.replace(`/book/${id}`);
-      return;
-    }
-    router.back();
-  }
-
   const unloadSound = useCallback(async () => {
+    playbackResolveRef.current?.();
+    playbackResolveRef.current = null;
     if (soundRef.current) {
       await soundRef.current.stopAsync().catch(() => {});
       await soundRef.current.unloadAsync().catch(() => {});
@@ -185,51 +192,156 @@ export default function ReaderScreen() {
     }
   }, []);
 
-  const handleStop = useCallback(async () => {
+  const persistTtsProgress = useCallback((chunkIndex: number, positionMillis: number) => {
+    const { userId, bookId, chapterId } = playbackContextRef.current;
+    if (!userId || !bookId || !chapterId) return;
+    upsertTtsProgress(userId, bookId, chapterId, {
+      voice: voiceRef.current,
+      chunkIndex,
+      positionMillis,
+    }).catch((error) => {
+      console.error("save TTS progress error:", error);
+    });
+  }, []);
+
+  const saveCurrentTtsProgress = useCallback(async () => {
+    const { userId, bookId, chapterId } = playbackContextRef.current;
+    if (!userId || !bookId || !chapterId || !soundRef.current) return;
+
+    const status = await soundRef.current.getStatusAsync().catch(() => null);
+    if (!status?.isLoaded) return;
+
+    await upsertTtsProgress(userId, bookId, chapterId, {
+      voice: voiceRef.current,
+      chunkIndex: loadedChunkIdxRef.current,
+      positionMillis: status.positionMillis ?? 0,
+    }).catch((error) => {
+      console.error("save TTS progress error:", error);
+    });
+  }, []);
+
+  const clearCurrentTtsProgress = useCallback(async () => {
+    const { userId, bookId, chapterId } = playbackContextRef.current;
+    if (!userId || !bookId || !chapterId) return;
+    await clearTtsProgress(userId, bookId, chapterId).catch((error) => {
+      console.error("clear TTS progress error:", error);
+    });
+  }, []);
+
+  const stopTts = useCallback(async (resetProgress: boolean) => {
     stopFlagRef.current = true;
+    if (!resetProgress) {
+      await saveCurrentTtsProgress();
+    }
     await unloadSound();
     chunkIdxRef.current = 0;
+    resumePositionMillisRef.current = 0;
     setTtsState("idle");
-  }, [unloadSound]);
+    if (resetProgress) {
+      await clearCurrentTtsProgress();
+    }
+  }, [clearCurrentTtsProgress, saveCurrentTtsProgress, unloadSound]);
+
+  const handleStop = useCallback(async () => {
+    await stopTts(true);
+  }, [stopTts]);
 
   useEffect(() => {
-    handleStop();
-  }, [currentIndex, handleStop]);
+    return () => {
+      stopFlagRef.current = true;
+      (async () => {
+        await saveCurrentTtsProgress();
+        await unloadSound();
+      })().catch(() => {});
+    };
+  }, [saveCurrentTtsProgress, unloadSound]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") {
+        saveCurrentTtsProgress().catch(() => {});
+      }
+    });
+
+    return () => subscription.remove();
+  }, [saveCurrentTtsProgress]);
+
+  async function goToIndex(next: number) {
+    if (next < 0 || next >= chapters.length) return;
+    await stopTts(false);
+    setCurrentIndex(next);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }
+
+  async function handleBackToBookDetail() {
+    await stopTts(false);
+    if (id) {
+      router.replace(`/book/${id}`);
+      return;
+    }
+    router.back();
+  }
 
   const playBase64 = useCallback(
-    async (base64: string) => {
+    async (base64: string, chunkIndex: number, startPositionMillis: number) => {
       await unloadSound();
       if (stopFlagRef.current) return;
+      loadedChunkIdxRef.current = chunkIndex;
+      lastProgressSaveAtRef.current = Date.now();
       const { sound } = await Audio.Sound.createAsync(
         { uri: `data:audio/wav;base64,${base64}` },
-        { shouldPlay: true },
+        { shouldPlay: false },
       );
       soundRef.current = sound;
+      if (startPositionMillis > 0) {
+        await sound.setPositionAsync(startPositionMillis).catch(() => {});
+      }
+      await sound.playAsync();
       await new Promise<void>((resolve) => {
+        playbackResolveRef.current = resolve;
         sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) resolve();
+          if (!status.isLoaded) return;
+          if (status.didJustFinish) {
+            playbackResolveRef.current = null;
+            persistTtsProgress(chunkIndex + 1, 0);
+            resolve();
+            return;
+          }
+
+          const now = Date.now();
+          if (status.isPlaying && now - lastProgressSaveAtRef.current >= 2500) {
+            lastProgressSaveAtRef.current = now;
+            persistTtsProgress(chunkIndex, status.positionMillis ?? 0);
+          }
         });
       });
     },
-    [unloadSound],
+    [persistTtsProgress, unloadSound],
   );
 
   const playQueue = useCallback(async () => {
     const chunks = chunksRef.current;
+    const initialChunkIndex = chunkIdxRef.current;
+    const initialPositionMillis = resumePositionMillisRef.current;
+    resumePositionMillisRef.current = 0;
     for (let i = chunkIdxRef.current; i < chunks.length; i++) {
       if (stopFlagRef.current) break;
       chunkIdxRef.current = i;
+      const startPositionMillis = i === initialChunkIndex ? initialPositionMillis : 0;
+      persistTtsProgress(i, startPositionMillis);
       setTtsState("loading");
       const base64 = await callGeminiTTS(chunks[i], voiceRef.current);
       if (stopFlagRef.current) break;
       setTtsState("playing");
-      await playBase64(base64);
+      await playBase64(base64, i, startPositionMillis);
     }
     if (!stopFlagRef.current) {
       setTtsState("idle");
       chunkIdxRef.current = 0;
+      resumePositionMillisRef.current = 0;
+      await clearCurrentTtsProgress();
     }
-  }, [playBase64]);
+  }, [clearCurrentTtsProgress, persistTtsProgress, playBase64]);
 
   const handlePlay = useCallback(async () => {
     if (!hasTtsApiKey()) {
@@ -243,6 +355,15 @@ export default function ReaderScreen() {
     stopFlagRef.current = false;
     chunksRef.current = splitChunks(paragraphs.join("\n\n"));
     chunkIdxRef.current = 0;
+    resumePositionMillisRef.current = 0;
+    const { userId, bookId, chapterId } = playbackContextRef.current;
+    if (userId && bookId && chapterId) {
+      const progress = await fetchTtsProgress(userId, bookId, chapterId).catch(() => null);
+      if (progress?.voice === voiceRef.current && progress.chunkIndex < chunksRef.current.length) {
+        chunkIdxRef.current = progress.chunkIndex;
+        resumePositionMillisRef.current = progress.positionMillis;
+      }
+    }
     await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
     playQueue().catch((error) => {
       console.error("TTS error:", error);
@@ -256,6 +377,7 @@ export default function ReaderScreen() {
     const status = await soundRef.current.getStatusAsync();
     if (!status.isLoaded) return;
     if (status.isPlaying) {
+      await saveCurrentTtsProgress();
       await soundRef.current.pauseAsync();
       setTtsState("paused");
     } else {

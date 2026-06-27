@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { fetchMockPaymentProfile, type PaymentProfile } from "@/lib/paymentApi";
+import { enforceOfflineBookLimitForPlan } from "@/lib/offlineService";
 import { AsyncStorage, readJson, writeJson } from "@/lib/storage";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import React, { createContext, useContext, useEffect, useState } from "react";
@@ -266,6 +267,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (USE_LOCAL_AUTH || user.id.startsWith("local-")) return;
+
+    enforceOfflineBookLimitForPlan(user.id, { isVip: user.isVip }).catch(() => {});
+  }, [user?.id, user?.isVip]);
 
   useEffect(() => {
     if (!user?.id) return;

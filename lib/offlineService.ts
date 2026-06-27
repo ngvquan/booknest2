@@ -170,6 +170,25 @@ export async function removeDownloadedBook(
   await writeJson(booksKey, filtered);
 }
 
+export async function enforceOfflineBookLimitForPlan(
+  userId?: string | null,
+  options?: { isVip?: boolean },
+): Promise<AppBook[]> {
+  const books = await getDownloadedBooks(userId);
+  if (options?.isVip || books.length <= FREE_OFFLINE_BOOK_LIMIT) {
+    return [];
+  }
+
+  const regularBooks = books.filter((book) => !book.isVip);
+  const keepSource = regularBooks.length > 0 ? regularBooks : books;
+  const keep = keepSource.slice(-FREE_OFFLINE_BOOK_LIMIT);
+  const keepIds = new Set(keep.map((book) => book.id));
+  const removed = books.filter((book) => !keepIds.has(book.id));
+
+  await Promise.all(removed.map((book) => removeDownloadedBook(book.id, userId)));
+  return removed;
+}
+
 async function getOfflineChapters(
   bookId: string,
   userId?: string | null,
