@@ -492,6 +492,10 @@ function findMatchingPaymentAttempt(db, bankTransaction) {
   );
 }
 
+function isBankWebhookPath(pathname) {
+  return pathname === "/webhooks/bank-transaction" || pathname === "/hooks/sepay-payment";
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
@@ -686,7 +690,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    if (method === "GET" && pathname === "/webhooks/bank-transaction") {
+    if (method === "GET" && isBankWebhookPath(pathname)) {
       if (!isWebhookAuthorized(req)) {
         return send(res, 401, { error: "Unauthorized webhook" });
       }
@@ -698,7 +702,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (method === "POST" && pathname === "/webhooks/bank-transaction") {
+    if (method === "POST" && isBankWebhookPath(pathname)) {
       if (!isWebhookAuthorized(req)) {
         return send(res, 401, { error: "Unauthorized webhook" });
       }
