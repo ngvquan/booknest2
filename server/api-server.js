@@ -495,7 +495,7 @@ function findMatchingPaymentAttempt(db, bankTransaction) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
-    const pathname = url.pathname;
+    const pathname = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
     const method = req.method || "GET";
 
     if (method === "OPTIONS") {
@@ -684,6 +684,18 @@ const server = http.createServer(async (req, res) => {
         saveDb(db);
         return send(res, 200, attempt);
       }
+    }
+
+    if (method === "GET" && pathname === "/webhooks/bank-transaction") {
+      if (!isWebhookAuthorized(req)) {
+        return send(res, 401, { error: "Unauthorized webhook" });
+      }
+
+      return send(res, 200, {
+        ok: true,
+        service: "book-api",
+        webhook: "bank-transaction",
+      });
     }
 
     if (method === "POST" && pathname === "/webhooks/bank-transaction") {
