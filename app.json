@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "Book App",
+    "slug": "book-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/book-nest-icon-v2-1024.png",
+    "scheme": "book-app",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#0f0e17"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.bookapp.reader"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/book-nest-icon-v2-1024.png",
+        "backgroundColor": "#0f0e17"
+      },
+      "package": "com.bookapp.reader"
+    },
+    "web": {
+      "favicon": "./assets/images/book-nest-icon-v2-1024.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cho phép $(PRODUCT_NAME) truy cập thư viện ảnh để đổi ảnh đại diện.",
+          "cameraPermission": "Cho phép $(PRODUCT_NAME) mở camera để chụp ảnh đại diện."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Cho phép $(PRODUCT_NAME) sử dụng micro để tìm truyện bằng giọng nói.",
+          "speechRecognitionPermission": "Cho phép $(PRODUCT_NAME) chuyển giọng nói thành văn bản để tìm truyện.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.tts",
+            "com.google.android.as"
+          ]
+        }
+      ],
+      [
+        "expo-router",
+        {
+          "origin": "https://localhost"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

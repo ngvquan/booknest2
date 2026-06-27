@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: booknest-api
+    env: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run server:api
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PAYMENT_BANK_ID
+        value: "970422"
+      - key: PAYMENT_BANK_NAME
+        value: MB BANK
+      - key: PAYMENT_ACCOUNT_NO
+        sync: false
+      - key: PAYMENT_ACCOUNT_NAME
+        sync: false
+      - key: PAYMENT_QR_TEMPLATE
+        value: compact2
+      - key: PAYMENT_WEBHOOK_SECRET
+        sync: false

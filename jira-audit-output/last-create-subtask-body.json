@@ -1,0 +1,17 @@
+﻿{
+    "fields":  {
+                   "summary":  "Thiet ke giao dien va luong xu ly - US09 - Xem báo cáo chi tiêu theo tháng",
+                   "parent":  {
+                                  "key":  "WS-30"
+                              },
+                   "project":  {
+                                   "key":  "WS"
+                               },
+                   "assignee":  {
+                                    "accountId":  "712020:82ad2bb5-bab6-4817-8926-ec9b2c48d147"
+                                },
+                   "issuetype":  {
+                                     "id":  "10038"
+                                 }
+               }
+}
